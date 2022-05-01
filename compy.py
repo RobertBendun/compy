@@ -87,11 +87,15 @@ class Visitor(ast.NodeVisitor):
         if stmt is not None:
             codegen.add_statement(stmt)
 
+    def block(self, statements):
+        for statement in statements:
+            self.add_statement(self.visit(statement))
+
+
     def visit_Module(self, module: ast.Module):
         codegen.enter_function('compy_main')
         with codegen.in_function("compy_main"):
-            for statement in module.body:
-                self.add_statement(self.visit(statement))
+            self.block(module.body)
 
     def visit_FunctionDef(self, fun: ast.FunctionDef):
         assert not fun.decorator_list,   "Decorators are not supported yet"
@@ -109,6 +113,28 @@ class Visitor(ast.NodeVisitor):
             for statement in fun.body:
                 self.add_statement(self.visit(statement))
 
+    def visit_AnnAssign(self, assign: ast.AnnAssign):
+        assert isinstance(assign.simple, int), "Unknown form of assigment"
+
+        return "%s %s = %s" % (
+                assign.annotation.id,
+                assign.target.id,
+                cpp_int(assign.simple)
+        )
+
+    def visit_AugAssign(self, assign: ast.AugAssign):
+        if   isinstance(assign.op, ast.Add):  op ="+"
+        elif isinstance(assign.op, ast.Mult): op = "*"
+        else:
+            assert False, "Unsuported operation: " + ast.dump(assign.op)
+
+        return "%s %s= %s" % (self.visit(assign.target), op, self.visit(assign.value))
+
+    def visit_While(self, w: ast.While):
+        self.add_statement("while (%s) {" % (self.visit(w.test), ))
+        self.block(w.body)
+        self.add_statement("}")
+
     def visit_Return(self, ret: ast.Return):
         return "return " + self.visit(ret.value)
 
@@ -123,8 +149,9 @@ class Visitor(ast.NodeVisitor):
         assert len(expr.ops) == 1, "Only one operation is supported now"
         lhs, op, rhs = expr.left, expr.ops[0], expr.comparators[0]
 
-        if isinstance(op, ast.Lt): o = "<"
-        else: assert False, "unknown comparison operator: " + op
+        if isinstance(op, ast.Lt):    o = "<"
+        elif isinstance(op, ast.LtE): o = "<="
+        else: assert False, "unknown comparison operator: " + ast.dump(op, indent=2)
 
         return "(%s) %s (%s)" % (self.visit(lhs), o, self.visit(rhs))
 
