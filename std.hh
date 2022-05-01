@@ -155,3 +155,25 @@ int main()
 		return 1;
 	}
 }
+
+struct Range
+{
+	int from, to;
+
+	struct Iterator
+	{
+		int i;
+
+		int operator*() const { return i; }
+		Iterator& operator++() { ++i; return *this; }
+		auto operator<=>(Iterator const& other) const = default;
+	};
+
+	auto begin() const { return Iterator{from}; }
+	auto end() const { return Iterator{to}; }
+};
+
+Range range(int from, int to)
+{
+	return { from, to };
+}

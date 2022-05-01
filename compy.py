@@ -135,6 +135,11 @@ class Visitor(ast.NodeVisitor):
         self.block(w.body)
         self.add_statement("}")
 
+    def visit_For(self, f: ast.For):
+        self.add_statement("for (auto %s : %s) {" % (self.visit(f.target), self.visit(f.iter),))
+        self.block(f.body)
+        self.add_statement("}")
+
     def visit_Return(self, ret: ast.Return):
         return "return " + self.visit(ret.value)
 
