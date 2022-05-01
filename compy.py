@@ -113,13 +113,18 @@ class Visitor(ast.NodeVisitor):
             for statement in fun.body:
                 self.add_statement(self.visit(statement))
 
-    def visit_AnnAssign(self, assign: ast.AnnAssign):
-        assert isinstance(assign.simple, int), "Unknown form of assigment"
+    def visit_Assign(self, assign: ast.Assign):
+        assert len(assign.targets) == 1, "Multiple targets are not supported yet"
 
+        return "%s = %s" % (
+            self.visit(assign.targets[0]),
+            self.visit(assign.value))
+
+    def visit_AnnAssign(self, assign: ast.AnnAssign):
         return "%s %s = %s" % (
                 assign.annotation.id,
                 assign.target.id,
-                cpp_int(assign.simple)
+                self.visit(assign.value)
         )
 
     def visit_AugAssign(self, assign: ast.AugAssign):
@@ -145,6 +150,9 @@ class Visitor(ast.NodeVisitor):
 
     def visit_Expr(self, expr: ast.Expr):
         return self.visit(expr.value)
+
+    def visit_Subscript(self, expr: ast.Subscript):
+        return "%s[%s]" % (self.visit(expr.value), self.visit(expr.slice))
 
     def visit_IfExp(self, expr: ast.IfExp):
         return "(%s) ? (%s) : (%s)" % tuple(self.visit(x) for x in (expr.test, expr.body, expr.orelse))
@@ -187,6 +195,12 @@ class Visitor(ast.NodeVisitor):
 
     def visit_Name(self, name: ast.Name) -> str:
         return name.id
+
+    def visit_Attribute(self, attr: ast.Attribute) -> str:
+        return "(%s).%s" % (self.visit(attr.value), attr.attr)
+
+    def visit_List(self, l: ast.List):
+        return "list::init(%s)" % (', '.join(self.visit(element) for element in l.elts),)
 
     def visit_Constant(self, const: ast.Constant) -> str:
         val = const.value

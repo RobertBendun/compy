@@ -1,5 +1,5 @@
 def factorial_while(n) -> int:
-    i : int = i
+    i : int = 1
     result : int = 1
     while i <= n:
         result *= i
