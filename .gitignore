@@ -1,0 +1,4 @@
+.ccls-cache
+*.py.cc
+*.out
+compile_commands.json
