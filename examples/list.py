@@ -12,5 +12,12 @@ def append():
         nums.append(i)
     print(nums)
 
+def plus_equals():
+    nums : list = []
+    for i in range(10):
+        nums += [i]
+    print(nums)
+
 preallocate()
 append()
+plus_equals()

@@ -54,6 +54,9 @@ class Code_Generator:
     def save(self, filename : str):
         with open(filename, 'w') as f:
             f.write("#include <std.hh>\n")
+            functions = []
+            main = None
+
             for name, body in self.bodies.items():
                 if name in self.return_types:
                     return_type = self.return_types[name]
@@ -65,7 +68,16 @@ class Code_Generator:
                 else:
                     args = ""
 
-                f.write("\n%s %s(%s)\n{\n%s}\n" % (return_type, name, args, body))
+                declaration = "%s %s(%s)" % (return_type, name, args)
+                if name == "compy_main":
+                    main = (declaration, body)
+                else:
+                    functions.append((declaration, body))
+
+            for declaration, body in functions:
+                f.write("\n%s\n{\n%s}\n" % (declaration, body))
+
+            f.write("\n%s\n{\n%s}\n" % main)
 
 
 codegen = Code_Generator()
@@ -79,7 +91,9 @@ def cpp_int(i: int) -> str:
 class Visitor(ast.NodeVisitor):
     def generic_visit(self, node: ast.AST):
         classname = node.__class__.__name__
+        line, column = node.lineno, node.col_offset
         print(f"Unsuported AST node. Implement relevant visit_{classname}() method", file=sys.stderr)
+        print(f"Found at {line}:{column}")
         print(ast.dump(node, indent=2), file=sys.stderr, flush=True)
         exit(1)
 
@@ -162,9 +176,14 @@ class Visitor(ast.NodeVisitor):
         assert len(expr.ops) == 1, "Only one operation is supported now"
         lhs, op, rhs = expr.left, expr.ops[0], expr.comparators[0]
 
-        if isinstance(op, ast.Lt):    o = "<"
-        elif isinstance(op, ast.LtE): o = "<="
-        else: assert False, "unknown comparison operator: " + ast.dump(op, indent=2)
+        if isinstance(op, ast.Lt):
+            o = "<"
+        elif isinstance(op, ast.LtE):
+            o = "<="
+        elif isinstance(op, ast.In):
+            return "in((%s), (%s))" % (self.visit(lhs), self.visit(rhs))
+        else:
+            assert False, "unknown comparison operator: " + ast.dump(op, indent=2)
 
         return "(%s) %s (%s)" % (self.visit(lhs), o, self.visit(rhs))
 
@@ -180,6 +199,11 @@ class Visitor(ast.NodeVisitor):
         else: assert False, "unknown operator: " + ast.dump(op, indent=2)
 
         return "(%s) %s (%s)" % (self.visit(lhs), o, self.visit(rhs))
+
+    def visit_UnaryOp(self, expr: ast.UnaryOp):
+        if isinstance(expr.op, ast.USub):
+            return "-(%s)" % (self.visit(expr.operand),)
+        assert False, "unsuported type of unary operation: " + ast.dump(expr.op)
 
     def visit_Call(self, call: ast.Call) -> str:
         func = self.visit(call.func)
@@ -226,7 +250,18 @@ def compiler_main(args: argparse.Namespace):
     compile_program(source_code, source_file)
 
     codegen.save(f"{source_file}.cc")
-    run_command(["g++", "-std=c++20", "-Wall", "-Wextra", f"{source_file}.cc", "-o", f"{source_file}.out", f"-I{compy_location}"])
+    compilation_result = run_command(["g++",
+        "-std=c++20",
+        "-Wall", "-Wextra", "-Wno-unused-variable",
+        f"{source_file}.cc", "-o", f"{source_file}.out",
+        f"-I{compy_location}"])
+
+    if compilation_result.returncode != 0:
+        sys.stdout.flush()
+        print("[ERROR] Compilation of C++ code failed", file=sys.stderr)
+        if os.path.exists(f"./{source_file}.out"):
+            os.unlink(f"./{source_file}.out")
+        os._exit(1)
 
     compiler_result = run_command([f"./{source_file}.out"], capture_output=args.test)
 

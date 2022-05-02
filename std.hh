@@ -30,10 +30,18 @@ namespace python
 
 namespace python
 {
+	template<typename ...Lambdas>
+	struct overloaded : Lambdas...
+	{
+		using Lambdas::operator()...;
+	};
+
 	struct Value;
 	struct List;
 
-	struct None {} None;
+	struct None {
+		auto operator<=>(None const&) const = default;
+	} None;
 	using Bool = bool;
 	using Int = int;
 	using Str = std::string;
@@ -60,6 +68,12 @@ namespace python
 			return i >= 0 ? parent()[i] : parent()[size() + i];
 		}
 
+		List& operator+=(List &&other)
+		{
+			std::move(other.begin(), other.end(), std::back_inserter(*this));
+			return *this;
+		}
+
 		void append(Value &&value)
 		{
 			push_back(std::move(value));
@@ -84,6 +98,34 @@ namespace python
 				return (*p)[i];
 			}
 			throw type_error("Subscript is only allowed for list types");
+		}
+
+		bool coarce_bool() const
+		{
+			return std::visit(overloaded{
+				[](struct None) { return false; },
+				[](Bool b) { return b; },
+				[](Int const& i) { return i != 0; },
+				[](Str const& s) { return not s.empty(); },
+				[](List const& l) { return not l.empty(); }
+			}, *static_cast<Value_Variant const*>(this));
+		}
+
+		explicit operator bool() const
+		{
+			return coarce_bool();
+		}
+
+		bool operator==(Value const& rhs) const
+		{
+			return std::visit(overloaded{
+				[](struct python::None, struct python::None) { return true; },
+				[](Bool lhs, Bool rhs) { return lhs == rhs; },
+				[](Int const& lhs, Int const& rhs) { return lhs == rhs; },
+				[](Str const& lhs, Str const& rhs) { return lhs == rhs; },
+				[](List const& lhs, List const& rhs) { return std::equal(lhs.begin(), lhs.end(), rhs.begin(), rhs.end()); },
+				[](auto const&, auto const&) { return false; }
+			}, static_cast<Value_Variant const&>(*this), static_cast<Value_Variant const&>(rhs));
 		}
 	};
 
@@ -141,6 +183,19 @@ list operator*(list l, int n)
 	}
 
 	return result;
+}
+
+list operator+(list lhs, list rhs)
+{
+	return lhs += std::move(rhs);
+}
+
+bool operator==(any const& lhs, list const& rhs)
+{
+	return std::visit(python::overloaded{
+		[&](list const& lhs) { return std::equal(lhs.begin(), lhs.end(), rhs.begin(), rhs.end()); },
+		[](auto const&) { return false; }
+	}, static_cast<python::Value_Variant const&>(lhs));
 }
 
 std::ostream& operator<<(std::ostream& os, any const& val);
@@ -287,4 +342,9 @@ int len(any const& val)
 int len(list const& val)
 {
 	return val.size();
+}
+
+bool in(auto const& value, list const& list)
+{
+	return std::find(list.begin(), list.end(), value) != list.end();
 }
